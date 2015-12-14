@@ -35,33 +35,37 @@
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/TwistStamped.h>
 #include <tf/tf.h>
-
+#include <math.h>
 ros::Publisher bodyAxisVelocityPublisher;
 geometry_msgs::TwistStamped vs;
+geometry_msgs::PoseStamped localPose;
+bool hasTakeoff;
 
+
+void poseReceived(const geometry_msgs::PoseStampedConstPtr& msg)
+{
+  localPose = *msg;
+}
 
 void markerPoseReceived(const geometry_msgs::PoseStampedConstPtr& msg)
 {
+
    geometry_msgs::PoseStamped dronePose = *msg;
    geometry_msgs::Pose markerPose;
    // Front camera tracking
    markerPose.position.x = dronePose.pose.position.z;
    markerPose.position.z = -dronePose.pose.position.y;
-   markerPose.position.y = dronePose.pose.position.x;
-   
-   ROS_INFO_STREAM("marker pose" << "x:" << markerPose.position.x 
-                          << "y:" << markerPose.position.y 
-                          << "z:" << markerPose.position.z);
+   markerPose.position.y = -dronePose.pose.position.x;
 
-  vs.twist.linear.y = markerPose.position.y;
-  vs.twist.linear.z = markerPose.position.z;
-
-  if (abs(markerPose.position.y) < 0.1)
+  vs.twist.linear.y = markerPose.position.y/2;
+  vs.twist.linear.z = markerPose.position.z/2;
+ 
+  if (fabs(markerPose.position.y) < 0.05)
   {
     vs.twist.linear.y = 0;
   }
 
-  if (abs(markerPose.position.z) < 0.1)
+  if (fabs(markerPose.position.z) < 0.05)
   {
     vs.twist.linear.z = 0;
   }
@@ -96,16 +100,41 @@ int main(int argc, char **argv)
 
   bodyAxisVelocityPublisher = nodeHandle.advertise<geometry_msgs::TwistStamped>("/CLDrone/body_axis_velocity/cmd_vel",10);
   ros::Subscriber markerPoseSubscriber = nodeHandle.subscribe("/aruco_single/pose",10,markerPoseReceived);
-
+  ros::Publisher takeOffPublisher = nodeHandle.advertise<geometry_msgs::PoseStamped>("mavros/setpoint_position/local", 1);
+  ros::Subscriber poseSubscriber = nodeHandle.subscribe("/mavros/local_position/local",10,poseReceived);
+  hasTakeoff = false;
+  
 
   ros::Rate loopRate(10.0);
   while(ros::ok())
   {
-    vs.header.seq++;
-	  vs.header.stamp = ros::Time::now();
 
-	  
-	  bodyAxisVelocityPublisher.publish(vs);
+    if(hasTakeoff){
+      // tracking
+      vs.header.seq++;
+      vs.header.stamp = ros::Time::now();
+
+    
+      bodyAxisVelocityPublisher.publish(vs);
+    } else {
+      // take off first
+     /* Publish example offboard position setpoint */
+    geometry_msgs::PoseStamped pose;
+    pose.pose.position.x = 0.5;
+    pose.pose.position.y = 0;
+    pose.pose.position.z = 2;
+    takeOffPublisher.publish(pose);
+    
+    if (fabs(pose.pose.position.z - localPose.pose.position.z) < 0.01)
+    {
+      ROS_INFO_STREAM("has taken off to target position");
+      hasTakeoff = true;
+    }
+
+
+    }
+  
+    
 	  
     
   	ros::spinOnce();
