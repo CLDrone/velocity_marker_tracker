@@ -50,6 +50,7 @@ void poseReceived(const geometry_msgs::PoseStampedConstPtr& msg)
 void markerPoseReceived(const geometry_msgs::PoseStampedConstPtr& msg)
 {
 
+   hasTakeoff = true;
    geometry_msgs::PoseStamped dronePose = *msg;
    geometry_msgs::Pose markerPose;
    // Front camera tracking
@@ -57,9 +58,10 @@ void markerPoseReceived(const geometry_msgs::PoseStampedConstPtr& msg)
    markerPose.position.z = -dronePose.pose.position.y;
    markerPose.position.y = -dronePose.pose.position.x;
 
-  vs.twist.linear.y = markerPose.position.y/2;
-  vs.twist.linear.z = markerPose.position.z/2;
+  vs.twist.linear.y = markerPose.position.y/3;
+  vs.twist.linear.z = markerPose.position.z/3;
  
+ /*
   if (fabs(markerPose.position.y) < 0.05)
   {
     vs.twist.linear.y = 0;
@@ -86,7 +88,7 @@ void markerPoseReceived(const geometry_msgs::PoseStampedConstPtr& msg)
   {
       vs.twist.linear.z = -1;
   }
-
+*/
                           
 
    
@@ -125,11 +127,6 @@ int main(int argc, char **argv)
     pose.pose.position.z = 2;
     takeOffPublisher.publish(pose);
     
-    if (fabs(pose.pose.position.z - localPose.pose.position.z) < 0.01)
-    {
-      ROS_INFO_STREAM("has taken off to target position");
-      hasTakeoff = true;
-    }
 
 
     }
