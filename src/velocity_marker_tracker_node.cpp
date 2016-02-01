@@ -46,7 +46,8 @@ geometry_msgs::PoseStamped nextPos;
 geometry_msgs::PoseStamped uavPose;
 double uavRollENU, uavPitchENU, uavYawENU;
 
-int initialExpectPose = 0;
+
+int initialExpectPose;
 
 
 void markerPoseReceived(const geometry_msgs::PoseStampedConstPtr& msg)
@@ -66,7 +67,8 @@ void markerPoseReceived(const geometry_msgs::PoseStampedConstPtr& msg)
 	
 	
     double Xc, Yc, Zc, Dc, At;
-    double Ay;    
+    double Ay;
+    double keep_distance;    
     geometry_msgs::PoseStamped uavPosENU;
     
     /*  -- Original 
@@ -94,11 +96,30 @@ void markerPoseReceived(const geometry_msgs::PoseStampedConstPtr& msg)
     Ay = asin(Yc/Dc);
     At = Ay + uavYawENU;
     
-    uavPosENU.pose.position.x = -(Dc*cos(At));
-    uavPosENU.pose.position.y = -(Dc*sin(At));
-    uavPosENU.pose.position.z = -(Zc);
+ 
+    //uavPosENU.pose.position.x = -(Dc*cos(At));
+    //uavPosENU.pose.position.y = -(Dc*sin(At));
+    //uavPosENU.pose.position.z = -(Zc);
    
-
+    
+   /* For Further Test*/
+      uavPosENU.pose.position.x = -(Xc*cos(uavYawENU) - Yc*sin(uavYawENU));
+      uavPosENU.pose.position.y = -(Xc*sin(uavYawENU) + Yc*cos(uavYawENU));
+      uavPosENU.pose.position.z = -(Zc);
+    /* */
+    // Calculate Tag  Yaw
+    	uavPose.pose.orientation.x = tag2cameraRDF.pose.orientation.x;
+	uavPose.pose.orientation.y = tag2cameraRDF.pose.orientation.y;
+	uavPose.pose.orientation.z = tag2cameraRDF.pose.orientation.z;
+	uavPose.pose.orientation.w = tag2cameraRDF.pose.orientation.w;
+	
+        tf::Quaternion quat_tag_;
+	tf::quaternionMsgToTF(uavPose.pose.orientation, quat_tag_);
+	double roll_tag_, pitch_tag_, yaw_tag_;	
+	tf::Matrix3x3(quat_tag_).getRPY(roll_tag_, pitch_tag_, yaw_tag_);  
+	ROS_INFO("Tag RPY:[%0.3f, %0.3f, %0.3f]", (roll_tag_*180/3.1415926 + 90), pitch_tag_*180/3.1415926, yaw_tag_*180/3.1415926);
+	yaw_tag_ = roll_tag_ + 3.1415926/2;
+ 	
     uavPosENU.header.stamp = ros::Time::now();   
     // Send the position to the FCU
     local_pos_pub_.publish(uavPosENU);
@@ -119,20 +140,23 @@ void markerPoseReceived(const geometry_msgs::PoseStampedConstPtr& msg)
     nextPos.pose.position.x = -(cos(expectYaw)*Xt - sin(expectYaw)*Zt);
     nextPos.pose.position.y = -(sin(expectYaw)*Xt + cos(expectYaw)*Zt);
     nextPos.pose.position.z = -(-Yt);*/
+        double roll_, pitch_, yaw_;
+        tf::Quaternion quat;
         
 		if (!initialExpectPose)
 		{
-			initialExpectPose = 1;
-			nextPos.pose.position.x = uavPose.pose.position.x;
-			nextPos.pose.position.y = uavPose.pose.position.y;			
-			nextPos.pose.position.z = uavPose.pose.position.z;
 			
-			tf::Quaternion quat;
-			double roll_, pitch_, yaw_;
-			tf::quaternionMsgToTF(uavPose.pose.orientation, quat);
-			tf::Matrix3x3(quat).getRPY(roll_, pitch_, yaw_);
+			
+			nextPos.pose.position.x = uavPosENU.pose.position.x;
+			nextPos.pose.position.y = uavPosENU.pose.position.y;			
+			nextPos.pose.position.z = uavPosENU.pose.position.z;
+			
+						
+			//tf::quaternionMsgToTF(uavPose.pose.orientation, quat);
+			//tf::Matrix3x3(quat).getRPY(roll_, pitch_, yaw_);
 			roll_ = 0;
 			pitch_ = 0;
+			yaw_ = yaw_tag_ + (3.1415926/2 + uavYawENU);
 			quat = tf::createQuaternionFromRPY(roll_, pitch_, yaw_);
 				
                         nextPos.pose.orientation.x = quat.x();
@@ -141,12 +165,86 @@ void markerPoseReceived(const geometry_msgs::PoseStampedConstPtr& msg)
 			nextPos.pose.orientation.w = quat.w();
 
 			nextPos.header.stamp = ros::Time::now();
-			enuSetLocoalPositionPublisher.publish(nextPos); 
+			
+			//ROS_INFO("Current State: %d, Target Pos:[%0.3f, %0.3f, %0.3f] RPY:[%0.3f, %0.3f, %0.3f]", initialExpectPose, nextPos.pose.position.x, nextPos.pose.position.y, nextPos.pose.position.z, roll_*180/3.1415926, pitch_*180/3.1415926, yaw_*180/3.1415926);
+			
+			if ((nextPos.pose.position.x == 0) &&
+				(nextPos.pose.position.y == 0) &&
+				(nextPos.pose.position.z == 0))
+			{
+				initialExpectPose = 0;
+			}
+			else
+			{					
+				double distance_;
+				distance_ = sqrt((uavPose.pose.position.x - nextPos.pose.position.x)+(uavPose.pose.position.y - nextPos.pose.position.y)+(uavPose.pose.position.z - nextPos.pose.position.z));
+				
+				//ROS_INFO("Current Distance %0.3f", distance_);
+				
+				if (distance_ > 0.8)
+				{
+					initialExpectPose = 0;
+				}
+				else
+				{	
+					nextPos.pose.position.x = -(Xc*cos(uavYawENU) - 0*sin(uavYawENU));
+      					nextPos.pose.position.y = -(Xc*sin(uavYawENU) + 0*cos(uavYawENU));
+      					nextPos.pose.position.z = -(0);
+					
+					//tf::quaternionMsgToTF(uavPose.pose.orientation, quat);
+					//tf::Matrix3x3(quat).getRPY(roll_, pitch_, yaw_);
+					roll_ = 0;
+					pitch_ = 0;
+					
+					//ROS_INFO("Current Yaw: %0.3f", yaw_*180/3.1415926);
+					yaw_ = yaw_tag_ + (3.1415926/2 + uavYawENU);
+					quat = tf::createQuaternionFromRPY(roll_, pitch_, yaw_);
+					
+					//ROS_INFO("Target Yaw: %0.3f", yaw_*180/3.1415926);
+					
+                        		nextPos.pose.orientation.x = quat.x();
+					nextPos.pose.orientation.y = quat.y();
+					nextPos.pose.orientation.z = quat.z();
+					nextPos.pose.orientation.w = quat.w();
+					
+
+					enuSetLocoalPositionPublisher.publish(nextPos); 
+					initialExpectPose = 1;
+				}
+			}
 		}
 		else
 		{	
+			//nextPos.pose.position.x = -(Xc*cos(uavYawENU) - 0*sin(uavYawENU));
+      			//nextPos.pose.position.y = -(Xc*sin(uavYawENU) + 0*cos(uavYawENU));
+      			//nextPos.pose.position.z = -(0);
+					
+			//tf::quaternionMsgToTF(uavPose.pose.orientation, quat);
+			//tf::Matrix3x3(quat).getRPY(roll_, pitch_, yaw_);
+			roll_ = 0;
+			pitch_ = 0;
+					
+			//ROS_INFO("UAV Yaw: %0.3f", yaw_*180/3.1415926);
+			//ROS_INFO("UAV Yaw ENU:%0.3f", uavYawENU*180/3.1415926);
+			//ROS_INFO("Tag Yaw: %0.3f", yaw_tag_*180/3.1415926);
+
+			yaw_ = yaw_tag_ + ( 3.1415926/2 +uavYawENU);
+			quat = tf::createQuaternionFromRPY(roll_, pitch_, yaw_);
+					
+			//ROS_INFO("Target Yaw: %0.3f", yaw_*180/3.1415926);
+					
+                        nextPos.pose.orientation.x = quat.x();
+			nextPos.pose.orientation.y = quat.y();
+			nextPos.pose.orientation.z = quat.z();
+			nextPos.pose.orientation.w = quat.w();
+
 			nextPos.header.stamp = ros::Time::now();
 			enuSetLocoalPositionPublisher.publish(nextPos);
+						
+			tf::quaternionMsgToTF(nextPos.pose.orientation, quat);
+			tf::Matrix3x3(quat).getRPY(roll_, pitch_, yaw_);
+			//ROS_INFO("Current State: %d, Target Pos:[%0.3f, %0.3f, %0.3f] RPY:[%0.3f, %0.3f, %0.3f]", initialExpectPose, nextPos.pose.position.x, nextPos.pose.position.y, nextPos.pose.position.z, roll_*180/3.1415926, pitch_*180/3.1415926, yaw_*180/3.1415926);
+		
 		}
 
 	  
@@ -173,8 +271,7 @@ void markerPoseAprilReceived(const geometry_msgs::PoseArray::ConstPtr& msgArray)
 		vision_pose_.pose.position.z = msg.position.z;
 		vision_pose_.header.stamp = ros::Time::now();
 		// Send the position to the FCU
-		local_pos_pub_.publish(vision_pose_);
-		
+		local_pos_pub_.publish(vision_pose_);	
 			
 		
 	}
@@ -187,16 +284,22 @@ void markerPoseAprilReceived(const geometry_msgs::PoseArray::ConstPtr& msgArray)
 
 void uavPoseReceived(const geometry_msgs::PoseStampedConstPtr& msg)
 {
-
-	uavPose = *msg;
+	
+	//uavPose = *msg;	
+	uavPose.pose.position.x = msg->pose.position.x;
+	uavPose.pose.position.y = msg->pose.position.y;
+	uavPose.pose.position.z = msg->pose.position.z;
+	uavPose.pose.orientation.x = msg->pose.orientation.x;
+	uavPose.pose.orientation.y = msg->pose.orientation.y;
+	uavPose.pose.orientation.z = msg->pose.orientation.z;
+	uavPose.pose.orientation.w = msg->pose.orientation.w;
 	
 	// Using ROS tf to get RPY angle from Quaternion
-        tf::Quaternion quat;
+    tf::Quaternion quat;
 	tf::quaternionMsgToTF(uavPose.pose.orientation, quat);	
 	tf::Matrix3x3(quat).getRPY(uavRollENU, uavPitchENU, uavYawENU);
-		
-	ROS_INFO("Current UAV angles: roll=%0.3f, pitch=%0.3f, yaw=%0.3f", uavRollENU*180/3.1415926, uavPitchENU*180/3.1415926, uavYawENU*180/3.1415926);
-			
+//	ROS_INFO("local_position/local: Pos:[%0.3f, %0.3f, %0.3f], RPY:[%0.3f, %0.3f, %0.3f]", uavPose.pose.position.x, uavPose.pose.position.y, uavPose.pose.position.z,uavRollENU*180/3.1415926, uavPitchENU*180/3.1415926, uavYawENU*180/3.1415926);
+	//ROS_INFO("Current UAV angles: roll=%0.3f, pitch=%0.3f, yaw=%0.3f", uavRollENU*180/3.1415926, uavPitchENU*180/3.1415926, uavYawENU*180/3.1415926);	
 	
 }
 
@@ -208,15 +311,15 @@ int main(int argc, char **argv)
 {
   ros::init(argc, argv, "velocity_marker_tracker_node");
   ros::NodeHandle nodeHandle;
+  initialExpectPose = 0;
 
   bodyAxisVelocityPublisher = nodeHandle.advertise<geometry_msgs::TwistStamped>("/CLDrone/body_axis_velocity/cmd_vel",10);
-  enuSetLocoalPositionPublisher = nodeHandle.advertise<geometry_msgs::PoseStamped>("/mavros/setpoint_position/local", 10);
+  enuSetLocoalPositionPublisher = nodeHandle.advertise<geometry_msgs::PoseStamped>("/mavros/setpoint_position/local", 1000);
   local_pos_pub_ = nodeHandle.advertise<geometry_msgs::PoseStamped>("/mavros/vision_pose/pose", 1000);
 
-  ros::Subscriber markerPoseSubscriber = nodeHandle.subscribe("/aruco_single/pose",10,markerPoseReceived);  
-  ros::Subscriber markerPoseAprilSubscriber = nodeHandle.subscribe("/tag_detections_pose", 10, markerPoseAprilReceived);
+  ros::Subscriber markerPoseSubscriber = nodeHandle.subscribe("/aruco_single/pose",1000,markerPoseReceived);  
+  ros::Subscriber markerPoseAprilSubscriber = nodeHandle.subscribe("/tag_detections_pose", 1000, markerPoseAprilReceived);
   ros::Subscriber uavPoseSubscriber = nodeHandle.subscribe("/mavros/local_position/pose", 1000, uavPoseReceived);
-	
 	
   ros::Rate loopRate(10.0);
   while(ros::ok())
