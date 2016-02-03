@@ -48,7 +48,6 @@ double uavRollENU, uavPitchENU, uavYawENU;
 
 int initialExpectPose;
 
-
 void markerPoseReceived(const geometry_msgs::PoseStamped& msg)
 {
    geometry_msgs::PoseStamped tag2cameraRDF;// = *msg;   //RDF - Right(x)-Down(y)-Front(z) Camera Coordinate
@@ -115,7 +114,7 @@ void markerPoseReceived(const geometry_msgs::PoseStamped& msg)
 	tf::Matrix3x3(quat_tag_).getRPY(roll_tag_, pitch_tag_, yaw_tag_);  
 	ROS_INFO("Tag RPY:[%0.3f, %0.3f, %0.3f]", (roll_tag_*180/3.1415926), pitch_tag_*180/3.1415926, yaw_tag_*180/3.1415926);
 	ROS_INFO("Tag XYZ:[%0.3f, %0.3f, %0.3f]", tag2cameraRDF.pose.position.x, tag2cameraRDF.pose.position.y, tag2cameraRDF.pose.position.z);
-	yaw_tag_ = roll_tag_ + 3.1415926/2;
+	yaw_tag_ = pitch_tag_;
  	
     uavPosENU.header.stamp = ros::Time::now();   
     // Send the position to the FCU
@@ -195,7 +194,9 @@ void markerPoseReceived(const geometry_msgs::PoseStamped& msg)
 					
 					//ROS_INFO("Current Yaw: %0.3f", yaw_*180/3.1415926);
 					//yaw_ = -yaw_tag_ + uavYawENU;
-					yaw_ = uavYawENU;
+					
+					yaw_ = uavYawENU;  // For Fixed Yaw Angle
+					//yaw_ = uavYawENU + yaw_tag_;   // For Dynamic Yaw Angle
 					quat = tf::createQuaternionFromRPY(roll_, pitch_, yaw_);
 					
 					//ROS_INFO("Target Yaw: %0.3f", yaw_*180/3.1415926);
@@ -238,10 +239,22 @@ void markerPoseReceived(const geometry_msgs::PoseStamped& msg)
 			nextPos.pose.orientation.z = quat.z();
 			nextPos.pose.orientation.w = quat.w();
 			*/ 
+			// -------------- For Dynamic Yaw Angle ------------
+			//roll_ = 0;
+			//pitch_ = 0;
+			//yaw_ = uavYawENU + yaw_tag_;
+			//quat = tf::createQuaternionFromRPY(roll_, pitch_, yaw_);
+			//nextPos.pose.orientation.x = quat.x();
+			//nextPos.pose.orientation.y = quat.y();
+			//nextPos.pose.orientation.z = quat.z();
+			//nextPos.pose.orientation.w = quat.w();
+			
+
+			// -------------------------------------------------
 			nextPos.header.stamp = ros::Time::now();
 			enuSetLocoalPositionPublisher.publish(nextPos);
 			
-		        tf::Quaternion nextPos_quat_;	
+		    tf::Quaternion nextPos_quat_;	
 			double nextPos_roll_, nextPos_pitch_, nextPos_yaw_;
 			tf::quaternionMsgToTF(nextPos.pose.orientation, nextPos_quat_);
 			tf::Matrix3x3(nextPos_quat_).getRPY(nextPos_roll_, nextPos_pitch_, nextPos_yaw_);
@@ -269,6 +282,16 @@ void markerPoseAprilReceived(const geometry_msgs::PoseArray::ConstPtr& msgArray)
 		ROS_INFO_STREAM("Received Apriltag Pose! [" << "x: " << msg.position.x 
                           << " y: " << msg.position.y 
                           << " z: " << msg.position.z << "]");
+		
+		
+		// --------------------
+		
+		double apriltag_roll_, apriltag_pitch_, apriltag_yaw_;
+		tf::Quaternion apriltag_quat_;
+		tf::quaternionMsgToTF(msg.orientation, apriltag_quat_);
+		tf::Matrix3x3(apriltag_quat_).getRPY(apriltag_roll_, apriltag_pitch_, apriltag_yaw_);
+        ROS_INFO("April Tag RPY: [%0.3f, %0.3f, %0.3f]", apriltag_roll_*180/3.1415926, apriltag_pitch_*180/3.1415926, apriltag_yaw_*180/3.1415926);
+        // ---------------------
 		
 		vision_pose_.pose.position.x = msg.position.x;
 		vision_pose_.pose.position.y = msg.position.y;
